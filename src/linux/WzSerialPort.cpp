@@ -13,6 +13,21 @@
 #include <termios.h>  
 #include <errno.h>
 
+#ifndef BOTHER
+#define BOTHER 0010000
+#endif
+
+// linux/include/uapi/asm-generic/ioctls.h
+#ifndef TCGETS2
+#define TCGETS2 _IOR('T', 0x2A, struct termios2)
+#endif
+
+#ifndef TCSETS2
+#define TCSETS2 _IOW('T', 0x2B, struct termios2)
+#endif
+
+#endif
+
 WzSerialPort::WzSerialPort()
 {
 }
@@ -27,7 +42,7 @@ bool WzSerialPort::open(const char* portname, int baudrate, char parity, char da
     // 打开串口
     pHandle[0] = -1;
     // 以 读写、不阻塞 方式打开
-    pHandle[0] = ::open(portname,O_RDWR|O_NOCTTY|O_NONBLOCK);
+    pHandle[0] = ::open(portname,O_RDWR|O_NOCTTY|O_NDELAY);
     
     // 打开失败，则打印失败信息，返回false
     if(pHandle[0] == -1)
@@ -35,6 +50,8 @@ bool WzSerialPort::open(const char* portname, int baudrate, char parity, char da
         std::cout << portname << " open failed , may be you need 'sudo' permission." << std::endl;
         return false;
     }
+    
+    fcntl(pHandle[0], F_SETFL, 0);
 
     // 设置串口参数
     // 创建串口参数对象
@@ -72,6 +89,14 @@ bool WzSerialPort::open(const char* portname, int baudrate, char parity, char da
         case 115200:
             cfsetispeed(&options,B115200);
             cfsetospeed(&options,B115200);
+            break;
+        case 460800:
+            cfsetispeed(&options,B460800);
+            cfsetospeed(&options,B460800);
+            break;
+        case 921600:
+            cfsetispeed(&options,B921600);
+            cfsetospeed(&options,B921600);
             break;
         default:
             std::cout << portname << " open failed , unkown baudrate , only support 4800,9600,19200,38400,57600,115200." << std::endl;
@@ -142,6 +167,38 @@ bool WzSerialPort::open(const char* portname, int baudrate, char parity, char da
             std::cout << portname << " open failed , unkown stopbit ." << std::endl;
             return false;
     }
+    
+    // 控制模式
+    options.c_cflag |= CLOCAL; // 保证程序不占用串口
+    options.c_cflag |= CREAD;  // 保证程序可以从串口中读取数据
+    
+    // 设置输出模式为原始输出
+    options.c_oflag &= ~OPOST; // OPOST：若设置则按定义的输出处理，否则所有c_oflag失效
+
+    // 设置本地模式为原始模式
+    options.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+    /*
+     *ICANON：允许规范模式进行输入处理
+     *ECHO：允许输入字符的本地回显
+     *ECHOE：在接收EPASE时执行Backspace,Space,Backspace组合
+     *ISIG：允许信号
+     */
+
+    options.c_iflag &= ~(BRKINT | ICRNL | INPCK | ISTRIP | IXON);
+    /*
+     *BRKINT：如果设置了IGNBRK，BREAK键输入将被忽略
+     *ICRNL：将输入的回车转化成换行（如果IGNCR未设置的情况下）(0x0d => 0x0a)
+     *INPCK：允许输入奇偶校验
+     *ISTRIP：去除字符的第8个比特
+     *IXON：允许输出时对XON/XOFF流进行控制 (0x11 0x13)
+     */
+
+    // 设置等待时间和最小接受字符
+    options.c_cc[VTIME] = 0; // 可以在select中设置
+    options.c_cc[VMIN] = 1;  // 最少读取一个字符
+
+    // 如果发生数据溢出，只接受数据，但是不进行读操作
+    tcflush(fd, TCIFLUSH);
 
     // 激活新配置
     if((tcsetattr(pHandle[0],TCSANOW,&options))!=0) 
