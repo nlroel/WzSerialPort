@@ -1,4 +1,4 @@
-﻿
+
 #ifndef _WZSERIALPORT_H
 #define _WZSERIALPORT_H
 
@@ -10,6 +10,8 @@
 	示例：
 		参考 main.cpp	
 */
+
+#include <cstdint>
 
 class WzSerialPort
 {
@@ -30,10 +32,12 @@ public:
 	void close();
 
 	//发送数据或写数据，成功返回发送数据长度，失败返回0
-	int send(const void *buf,int len);
+	int send(const uint8_t *buf,int len);
 
 	//接受数据或读数据，成功返回读取实际数据的长度，失败返回0
-	int receive(void *buf,int maxlen);
+	int receive(uint8_t *buf,int maxlen);
+
+    int receive(uint8_t *buf,int maxlen, int timeout);
 
 private:
 	int pHandle[16];
