@@ -40,7 +40,7 @@ bool WzSerialPort::open(const char* portname, int baudrate, char parity, char da
         return false;
     }
     
-    // if(fcntl(fd,F_SETFL,FNDELAY) >= 0)//非阻塞，覆盖前面open的属性
+    // if(fcntl(pHandle[0],F_SETFL,FNDELAY) >= 0)//非阻塞，覆盖前面open的属性
     if (fcntl(pHandle[0], F_SETFL, 0) < 0) // 阻塞，即使前面在open串口设备时设置的是非阻塞的，这里设为阻塞后，以此为准
     {
         std::cout << "System Error." << std::endl;
@@ -161,11 +161,11 @@ bool WzSerialPort::open(const char* portname, int baudrate, char parity, char da
             std::cout << portname << " open failed , unkown stopbit ." << std::endl;
             return false;
     }
-    
+
     // 控制模式
     options.c_cflag |= CLOCAL; // 保证程序不占用串口
     options.c_cflag |= CREAD;  // 保证程序可以从串口中读取数据
-    
+
     // 设置输出模式为原始输出
     options.c_oflag &= ~OPOST; // OPOST：若设置则按定义的输出处理，否则所有c_oflag失效
 
@@ -188,18 +188,18 @@ bool WzSerialPort::open(const char* portname, int baudrate, char parity, char da
     */
 
     // 设置等待时间和最小接受字符
-    options.c_cc[VTIME] = 0; // 可以在select中设置
+    options.c_cc[VTIME] = 1; // 可以在select中设置
     options.c_cc[VMIN] = 1; // 最少读取一个字符
 
     // 如果发生数据溢出，只接受数据，但是不进行读操作
     tcflush(pHandle[0], TCIFLUSH);
 
     // 激活新配置
-    if((tcsetattr(pHandle[0],TCSANOW,&options))!=0) 
-    { 
+    if((tcsetattr(pHandle[0],TCSANOW,&options))!=0)
+    {
         std::cout << portname << " open failed , can not complete set attributes ." << std::endl;
-        return false; 
-    } 
+        return false;
+    }
 
     return true;
 }
@@ -212,13 +212,13 @@ void WzSerialPort::close()
     }
 }
 
-int WzSerialPort::send(const void *buf,int len)
+int WzSerialPort::send(const uint8_t *buf,int len)
 {
     int sendCount = 0;
     if(pHandle[0] != -1)
     {
         // 将 buf 和 len 转换成api要求的格式
-        const char *buffer = (char*)buf;
+        const uint8_t *buffer = (uint8_t*)buf;
         size_t length = len;
         // 已写入的数据个数
         ssize_t tmp;
@@ -244,16 +244,49 @@ int WzSerialPort::send(const void *buf,int len)
     }
 
     return sendCount;
+//    int lengthSent;
+//    lengthSent = write(pHandle[0], buf, len);
+//    return lengthSent;
 }
 
-int WzSerialPort::receive(void *buf,int maxlen)
+int WzSerialPort::receive(uint8_t *buf,int maxlen)
 {
-    int receiveCount = ::read(pHandle[0],buf,maxlen);
+    int receiveCount = read(pHandle[0],buf,maxlen);
     if(receiveCount < 0)
     {
         receiveCount = 0;
     }
     return receiveCount;
+}
+
+int WzSerialPort::receive(uint8_t *buf, int maxlen, int timeoutms)
+{
+    int nfds;
+//    int nread = 0 ;
+//    char read_temp[256];
+    fd_set readfds;
+    ssize_t	nread;
+    struct timeval tv{};
+
+    tv.tv_sec = timeoutms / 1000;
+    tv.tv_usec = timeoutms % 1000;
+    FD_ZERO(&readfds);
+    FD_SET(pHandle[0],&readfds);
+//    bzero(read_temp,sizeof(read_temp));
+
+    nfds = select(pHandle[0]+1,&readfds,nullptr,nullptr,&tv);
+
+    if(nfds <= 0) {
+        return -1;
+//        printf("timeout!\r\n");
+    }
+    if (FD_ISSET(pHandle[0], &readfds)) {
+        if ((nread = read(pHandle[0],buf,maxlen))<0){
+            return -1;
+        } //即使不满desire_get_len，也会返回实际读取到的数据量
+        return (int)nread;
+    }
+    return -1;
 }
 
 
